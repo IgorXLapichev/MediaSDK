@@ -1312,7 +1312,11 @@ bool Skipping::IsShouldSkipFrame(H264DecoderFrame * pFrame, int32_t /*field*/)
 
     bool isReference = isReference0 || isReference1;
 
-    if ((m_VideoDecodingSpeed > 0) && !isReference)
+    if (m_VideoDecodingSpeed == 42)
+    {
+        isShouldSkip = !(pFrame->GetAU(0)->IsIntraAU() || pFrame->GetAU(1)->IsIntraAU());
+    }
+    else if ((m_VideoDecodingSpeed > 0) && !isReference)
     {
         if ((m_SkipFlag % m_ModSkipCycle) == 0)
         {
@@ -1333,6 +1337,16 @@ bool Skipping::IsShouldSkipFrame(H264DecoderFrame * pFrame, int32_t /*field*/)
 
 void Skipping::ChangeVideoDecodingSpeed(int32_t & num)
 {
+    if (num == 42)
+    {
+        m_VideoDecodingSpeed = num;
+        m_SkipCycle = 1;
+        m_ModSkipCycle = 1;
+        m_PermanentTurnOffDeblocking = 0;
+
+        return;
+    }
+
     m_VideoDecodingSpeed += num;
 
     if (m_VideoDecodingSpeed < 0)
