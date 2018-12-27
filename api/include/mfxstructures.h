@@ -881,6 +881,7 @@ enum {
     MFX_EXTBUFF_VPP_MIRRORING                   = MFX_MAKEFOURCC('M','I','R','R'),
     MFX_EXTBUFF_MV_OVER_PIC_BOUNDARIES          = MFX_MAKEFOURCC('M','V','P','B'),
     MFX_EXTBUFF_VPP_COLORFILL                   = MFX_MAKEFOURCC('V','C','L','F'),
+    MFX_EXTBUFF_DEC_VIDEO_PROCESSING_EXTA_DATA  = MFX_MAKEFOURCC('D','V','P','E'),
 #if (MFX_VERSION >= 1025)
     MFX_EXTBUFF_DECODE_ERROR_REPORT             = MFX_MAKEFOURCC('D', 'E', 'R', 'R'),
     MFX_EXTBUFF_VPP_COLOR_CONVERSION            = MFX_MAKEFOURCC('V', 'C', 'S', 'C'),
@@ -1509,6 +1510,12 @@ typedef struct {
     mfxU16          OutField;
     mfxU16          reserved[25];
 } mfxExtVPPFieldProcessing;
+
+typedef struct {
+    mfxExtBuffer    Header;
+    mfxFrameSurface1 surface;
+    mfxU16          reserved[13];
+} mfxExtDecVideoProcessingExtaData;
 
 typedef struct {
     mfxExtBuffer    Header;

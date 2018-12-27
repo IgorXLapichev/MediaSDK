@@ -116,6 +116,7 @@ struct sInputParams
 #if (MFX_VERSION >= 1025)
     bool    bErrorReport;
 #endif
+    bool    bDumpFullSizedSurface;
 
     mfxI32  monitorType;
 #if defined(LIBVA_SUPPORT)
@@ -124,6 +125,7 @@ struct sInputParams
 
     msdk_char     strSrcFile[MSDK_MAX_FILENAME_LEN];
     msdk_char     strDstFile[MSDK_MAX_FILENAME_LEN];
+    msdk_char     strDstResizedFile[MSDK_MAX_FILENAME_LEN];
     sPluginParams pluginParams;
 
     sInputParams()
@@ -225,7 +227,7 @@ protected: // functions
 
     virtual mfxStatus CreateAllocator();
     virtual mfxStatus CreateHWDevice();
-    virtual mfxStatus AllocFrames();
+    virtual mfxStatus AllocFrames(sInputParams *pParams);
     virtual void DeleteFrames();
     virtual void DeleteAllocator();
 
@@ -246,6 +248,7 @@ protected: // functions
 
 protected: // variables
     CSmplYUVWriter          m_FileWriter;
+    CSmplYUVWriter          m_FileWriter2;
     std::unique_ptr<CSmplBitstreamReader>  m_FileReader;
     mfxBitstream            m_mfxBS; // contains encoded data
     mfxU64 totalBytesProcessed;
@@ -262,7 +265,10 @@ protected: // variables
     std::vector<mfxExtBuffer *> m_ExtBuffersMfxBS;
 #if MFX_VERSION >= 1022
     mfxExtDecVideoProcessing m_DecoderPostProcessing;
-#endif //MFX_VERSION >= 1022
+    mfxExtDecVideoProcessing m_SfcVideoProcessing;
+    bool                     m_bDumpFullSizedSurface;
+
+    #endif //MFX_VERSION >= 1022
 
 #if (MFX_VERSION >= 1025)
     mfxExtDecodeErrorReport m_DecodeErrorReport;
@@ -274,6 +280,7 @@ protected: // variables
     bool                    m_bExternalAlloc; // use memory allocator as external for Media SDK
     bool                    m_bDecOutSysmem; // use system memory between Decoder and VPP, if false - video memory
     mfxFrameAllocResponse   m_mfxResponse; // memory allocation response for decoder
+    mfxFrameAllocResponse   m_mfxResizedResponse; // memory allocation response for decoder
     mfxFrameAllocResponse   m_mfxVppResponse;   // memory allocation response for vpp
 
     msdkFrameSurface*       m_pCurrentFreeSurface; // surface detached from free surfaces array
@@ -314,8 +321,10 @@ protected: // variables
     mfxExtVPPDeinterlacing  m_VppDeinterlacing;
     std::vector<mfxExtBuffer*> m_VppExtParams;
 
-    mfxExtVPPVideoSignalInfo m_VppVideoSignalInfo;
+    mfxExtVPPVideoSignalInfo   m_VppVideoSignalInfo;
     std::vector<mfxExtBuffer*> m_VppSurfaceExtParams;
+    std::vector<mfxExtBuffer*> m_SfcExtaData[16];
+
 
     CHWDevice               *m_hwdev;
 #if D3D_SURFACES_SUPPORT

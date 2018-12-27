@@ -829,10 +829,11 @@ VAAPIVideoCORE::CreateVideoAccelerator(
      * (3): Supported on SKL (Core) and APL (Atom) platforms and above
      * (4): Only video memory supported (so, OPAQ memory does not supported!)
      * */
-    if ( (GetExtBuffer(param->ExtParam, param->NumExtParam, MFX_EXTBUFF_DEC_VIDEO_PROCESSING)) &&
+    if ( ((GetExtBuffer(param->ExtParam, param->NumExtParam, MFX_EXTBUFF_DEC_VIDEO_PROCESSING)) &&
          (MFX_PICSTRUCT_PROGRESSIVE == param->mfx.FrameInfo.PicStruct) &&
          (MFX_HW_SCL <= GetHWType()) &&
-         (param->IOPattern & MFX_IOPATTERN_OUT_VIDEO_MEMORY))
+         (param->IOPattern & MFX_IOPATTERN_OUT_VIDEO_MEMORY)) ||
+         GetExtBuffer(param->ExtParam, param->NumExtParam, MFX_EXTBUFF_DEC_VIDEO_PROCESSING_EXTA_DATA))
     {
         params.m_needVideoProcessingVA = true;
     }

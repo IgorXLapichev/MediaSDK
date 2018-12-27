@@ -120,6 +120,11 @@ CDecodingPipeline::CDecodingPipeline()
     m_VppVideoSignalInfo.Header.BufferId = MFX_EXTBUFF_VPP_VIDEO_SIGNAL_INFO;
     m_VppVideoSignalInfo.Header.BufferSz = sizeof(m_VppVideoSignalInfo);
 
+    MSDK_ZERO_MEMORY(m_SfcVideoProcessing);
+    m_SfcVideoProcessing.Header.BufferId = MFX_EXTBUFF_DEC_VIDEO_PROCESSING_EXTA_DATA;
+    m_SfcVideoProcessing.Header.BufferSz = sizeof(mfxExtDecVideoProcessingExtaData);
+    m_bDumpFullSizedSurface = false;
+
 #if MFX_VERSION >= 1022
     MSDK_ZERO_MEMORY(m_DecoderPostProcessing);
     m_DecoderPostProcessing.Header.BufferId = MFX_EXTBUFF_DEC_VIDEO_PROCESSING;
@@ -409,7 +414,8 @@ mfxStatus CDecodingPipeline::Init(sInputParams *pParams)
     if (m_eWorkMode == MODE_FILE_DUMP) {
         // prepare YUV file writer
         sts = m_FileWriter.Init(pParams->strDstFile, pParams->numViews);
-        MSDK_CHECK_STATUS(sts, "m_FileWriter.Init failed");
+        sts = m_FileWriter2.Init(pParams->strDstResizedFile, pParams->numViews);
+        MSDK_CHECK_STATUS(sts, "m_FileWriter2.Init failed");
     } else if ((m_eWorkMode != MODE_PERFORMANCE) && (m_eWorkMode != MODE_RENDERING)) {
         msdk_printf(MSDK_STRING("error: unsupported work mode\n"));
         return MFX_ERR_UNSUPPORTED;
@@ -425,7 +431,7 @@ mfxStatus CDecodingPipeline::Init(sInputParams *pParams)
     MSDK_CHECK_STATUS(sts, "CreateAllocator failed");
 
     // in case of HW accelerated decode frames must be allocated prior to decoder initialization
-    sts = AllocFrames();
+    sts = AllocFrames(pParams);
     MSDK_CHECK_STATUS(sts, "AllocFrames failed");
 
     sts = m_pmfxDEC->Init(&m_mfxVideoParams);
@@ -469,7 +475,7 @@ bool CDecodingPipeline::IsVppRequired(sInputParams *pParams)
     if ( (m_mfxVideoParams.mfx.FrameInfo.CropW != pParams->Width) ||
         (m_mfxVideoParams.mfx.FrameInfo.CropH != pParams->Height))
     {
-        bVppIsUsed = pParams->Width && pParams->Height;
+        bVppIsUsed = pParams->Width && pParams->Height && !m_bDumpFullSizedSurface;
 #if MFX_VERSION >= 1022
         if ((MODE_DECODER_POSTPROC_AUTO == pParams->nDecoderPostProcessing) ||
             (MODE_DECODER_POSTPROC_FORCE == pParams->nDecoderPostProcessing) )
@@ -494,6 +500,7 @@ bool CDecodingPipeline::IsVppRequired(sInputParams *pParams)
     {
         bVppIsUsed = true;
     }
+
     return bVppIsUsed;
 }
 
@@ -519,6 +526,7 @@ void CDecodingPipeline::Close()
     m_pPlugin.reset();
     m_mfxSession.Close();
     m_FileWriter.Close();
+    m_FileWriter2.Close();
     if (m_FileReader.get())
         m_FileReader->Close();
 
@@ -586,6 +594,28 @@ mfxStatus CDecodingPipeline::InitMfxParams(sInputParams *pParams)
         m_mfxBS.NumExtParam = static_cast<mfxU16>(m_ExtBuffersMfxBS.size());
     }
 #endif
+
+    if (pParams->bDumpFullSizedSurface)
+    {
+        m_SfcVideoProcessing.In.CropX         = m_mfxVideoParams.mfx.FrameInfo.CropX;
+        m_SfcVideoProcessing.In.CropY         = m_mfxVideoParams.mfx.FrameInfo.CropY;
+        m_SfcVideoProcessing.In.CropW         = m_mfxVideoParams.mfx.FrameInfo.CropW;
+        m_SfcVideoProcessing.In.CropH         = m_mfxVideoParams.mfx.FrameInfo.CropH;
+
+        m_SfcVideoProcessing.Out.FourCC       = m_mfxVideoParams.mfx.FrameInfo.FourCC;
+        m_SfcVideoProcessing.Out.ChromaFormat = m_mfxVideoParams.mfx.FrameInfo.ChromaFormat;
+        m_SfcVideoProcessing.Out.Width        = pParams->Width;
+        m_SfcVideoProcessing.Out.Height       = pParams->Height;
+        m_SfcVideoProcessing.Out.CropX        = 0;
+        m_SfcVideoProcessing.Out.CropY        = 0;
+        m_SfcVideoProcessing.Out.CropW        = pParams->Width;
+        m_SfcVideoProcessing.Out.CropH        = pParams->Height;
+
+        m_ExtBuffers.push_back((mfxExtBuffer *)&m_SfcVideoProcessing);
+        AttachExtParam();
+
+        m_bDumpFullSizedSurface = true;
+    }
 
     // try to find a sequence header in the stream
     // if header is not found this function exits with error (e.g. if device was lost and there's no header in the remaining stream)
@@ -759,8 +789,9 @@ mfxStatus CDecodingPipeline::InitMfxParams(sInputParams *pParams)
     if (!m_bVppIsUsed)
     {
 
-        if ( (m_mfxVideoParams.mfx.FrameInfo.CropW != pParams->Width && pParams->Width) ||
-            (m_mfxVideoParams.mfx.FrameInfo.CropH != pParams->Height && pParams->Height) )
+        if ( ((m_mfxVideoParams.mfx.FrameInfo.CropW != pParams->Width && pParams->Width) ||
+            (m_mfxVideoParams.mfx.FrameInfo.CropH != pParams->Height && pParams->Height)) &&
+             !m_bDumpFullSizedSurface)
         {
             /* By default VPP used for resize */
             m_bVppIsUsed = true;
@@ -994,7 +1025,7 @@ mfxStatus CDecodingPipeline::ResetDevice()
     return m_hwdev->Reset();
 }
 
-mfxStatus CDecodingPipeline::AllocFrames()
+mfxStatus CDecodingPipeline::AllocFrames(sInputParams *pParams)
 {
     MSDK_CHECK_POINTER(m_pmfxDEC, MFX_ERR_NULL_PTR);
 
@@ -1108,6 +1139,27 @@ mfxStatus CDecodingPipeline::AllocFrames()
     sts = m_pGeneralAllocator->Alloc(m_pGeneralAllocator->pthis, &Request, &m_mfxResponse);
     MSDK_CHECK_STATUS(sts, "m_pGeneralAllocator->Alloc failed");
 
+    mfxFrameAllocRequest RequestResized;// = Request;
+    if (m_bDumpFullSizedSurface)
+    {
+        MSDK_ZERO_MEMORY(RequestResized);
+
+        RequestResized.Type = Request.Type;
+        RequestResized.Info.FourCC = Request.Info.FourCC;
+        RequestResized.NumFrameSuggested = RequestResized.NumFrameMin = Request.NumFrameSuggested;
+        RequestResized.AllocId = 1;
+
+        RequestResized.Info.CropH  = pParams->Height;
+        RequestResized.Info.CropW  = pParams->Width;
+        RequestResized.Info.CropX  = m_mfxVideoParams.mfx.FrameInfo.CropX;
+        RequestResized.Info.CropY  = m_mfxVideoParams.mfx.FrameInfo.CropY;
+        RequestResized.Info.Height = pParams->Height;
+        RequestResized.Info.Width  = pParams->Width;
+
+        sts = m_pGeneralAllocator->Alloc(m_pGeneralAllocator->pthis, &RequestResized, &m_mfxResizedResponse);
+        MSDK_CHECK_STATUS(sts, "m_pGeneralAllocator->Alloc failed");
+    }
+
     if (m_bVppIsUsed)
     {
         // alloc frames for VPP
@@ -1152,6 +1204,22 @@ mfxStatus CDecodingPipeline::AllocFrames()
         else {
             sts = m_pGeneralAllocator->Lock(m_pGeneralAllocator->pthis, m_mfxResponse.mids[i], &(m_pSurfaces[i].frame.Data));
             MSDK_CHECK_STATUS(sts, "m_pGeneralAllocator->Lock failed");
+        }
+
+        if (m_bDumpFullSizedSurface)
+        {
+
+            mfxExtDecVideoProcessingExtaData *extaData = new mfxExtDecVideoProcessingExtaData;
+            extaData->Header.BufferId = MFX_EXTBUFF_DEC_VIDEO_PROCESSING_EXTA_DATA;
+            extaData->Header.BufferSz = sizeof(mfxExtDecVideoProcessingExtaData);
+
+            MSDK_MEMCPY_VAR(extaData->surface.Info, &(RequestResized.Info), sizeof(mfxFrameInfo));
+            extaData->surface.Data.MemId = m_mfxResizedResponse.mids[i];
+
+            m_SfcExtaData[i].push_back((mfxExtBuffer*)extaData);
+
+            m_pSurfaces[i].frame.Data.ExtParam = &m_SfcExtaData[i][0];
+            m_pSurfaces[i].frame.Data.NumExtParam++;
         }
     }
 
@@ -1334,6 +1402,7 @@ void CDecodingPipeline::DeleteAllocator()
 void CDecodingPipeline::SetMultiView()
 {
     m_FileWriter.SetMultiView();
+    m_FileWriter2.SetMultiView();
     m_bIsMVC = true;
 }
 
@@ -1439,7 +1508,7 @@ mfxStatus CDecodingPipeline::ResetDecoder(sInputParams *pParams)
     MSDK_CHECK_STATUS(sts, "InitMfxParams failed");
 
     // in case of HW accelerated decode frames must be allocated prior to decoder initialization
-    sts = AllocFrames();
+    sts = AllocFrames(pParams);
     MSDK_CHECK_STATUS(sts, "AllocFrames failed");
 
     // init decoder
@@ -1479,6 +1548,7 @@ mfxStatus CDecodingPipeline::DeliverOutput(mfxFrameSurface1* frame)
     if (m_bResetFileWriter)
     {
         sts = m_FileWriter.Reset();
+        sts = m_FileWriter2.Reset();
         MSDK_CHECK_STATUS(sts, "");
         m_bResetFileWriter = false;
     }
@@ -1494,6 +1564,30 @@ mfxStatus CDecodingPipeline::DeliverOutput(mfxFrameSurface1* frame)
             if ((MFX_ERR_NONE == res) && (MFX_ERR_NONE != sts)) {
                 res = sts;
             }
+
+            mfxExtBuffer **data = reinterpret_cast <mfxExtBuffer **> (frame->Data.ExtParam);
+            if (data)
+            {
+                mfxExtDecVideoProcessingExtaData *extData = reinterpret_cast <mfxExtDecVideoProcessingExtaData*> (data[0]);
+                if (extData)
+                {
+                    mfxFrameSurface1 *surf = &extData->surface;
+
+                    res = m_pGeneralAllocator->Lock(m_pGeneralAllocator->pthis, extData->surface.Data.MemId, &(extData->surface.Data));
+                    if (MFX_ERR_NONE == res)
+                    {
+                        res = m_bOutI420 ? m_FileWriter2.WriteNextFrameI420(surf)
+                            : m_FileWriter2.WriteNextFrame(surf);
+                        sts = m_pGeneralAllocator->Unlock(m_pGeneralAllocator->pthis, extData->surface.Data.MemId, &(extData->surface.Data));
+                    }
+                }
+            }
+
+            if ((MFX_ERR_NONE == res) && (MFX_ERR_NONE != sts)) 
+            {
+                res = sts;
+            }
+
         } else if (m_eWorkMode == MODE_RENDERING) {
 #if D3D_SURFACES_SUPPORT
             res = m_d3dRender.RenderFrame(frame, m_pGeneralAllocator);

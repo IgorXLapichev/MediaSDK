@@ -808,7 +808,7 @@ void PackerVA::PackAU(const H264DecoderFrame *pFrame, int32_t isTop)
 
         sliceParamBuf->SetNumOfItem(count);
 
-        if (m_va->GetVideoProcessingVA())
+        if (m_va->GetVideoProcessingVA()->GetCurrentOutputSurface() != nullptr)
             PackProcessingInfo(sliceInfo);
 
         Status sts = m_va->Execute();

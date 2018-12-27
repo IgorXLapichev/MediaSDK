@@ -563,6 +563,16 @@ mfxStatus ParseInputString(msdk_char* strInput[], mfxU8 nArgNum, sInputParams* p
             i++;
             pParams->pluginParams = ParsePluginPath(strInput[i]);
         }
+        else if (0 == msdk_strcmp(strInput[i], MSDK_STRING("-o::resize")))
+        {
+            if (++i < nArgNum) {
+                pParams->bDumpFullSizedSurface = true;
+                msdk_opt_read(strInput[i], pParams->strDstResizedFile);
+            }
+            else {
+                msdk_printf(MSDK_STRING("error: option '-o::resize' expects an argument\n"));
+            }
+        }
         else if (0 == msdk_strcmp(strInput[i], MSDK_STRING("-i:null")))
         {
             ;

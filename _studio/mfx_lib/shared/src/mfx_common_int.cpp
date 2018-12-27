@@ -509,8 +509,8 @@ mfxStatus CheckDecodersExtendedBuffers(mfxVideoParam const* par)
                                                                MFX_EXTBUFF_MVC_SEQ_DESC,
                                                                MFX_EXTBUFF_MVC_TARGET_VIEWS,
                                                                MFX_EXTBUFF_DEC_VIDEO_PROCESSING,
-                                                               MFX_EXTBUFF_FEI_PARAM};
-
+                                                               MFX_EXTBUFF_FEI_PARAM,
+                                                               MFX_EXTBUFF_DEC_VIDEO_PROCESSING_EXTA_DATA};
     static const mfxU32 g_decoderSupportedExtBuffersHEVC[]  = {
                                                                MFX_EXTBUFF_HEVC_PARAM
                                                                };
@@ -802,6 +802,7 @@ void mfxVideoParamWrapper::CopyVideoParam(const mfxVideoParam & par)
         case MFX_EXTBUFF_JPEG_HUFFMAN:
         case MFX_EXTBUFF_HEVC_PARAM:
         case MFX_EXTBUFF_FEI_PARAM:
+        case MFX_EXTBUFF_DEC_VIDEO_PROCESSING_EXTA_DATA:
             {
                 void * in = GetExtendedBufferInternal(par.ExtParam, par.NumExtParam, par.ExtParam[i]->BufferId);
                 m_buffers.AddBuffer(par.ExtParam[i]);

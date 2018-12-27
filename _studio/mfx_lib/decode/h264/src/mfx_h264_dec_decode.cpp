@@ -333,7 +333,6 @@ mfxStatus VideoDECODEH264::Init(mfxVideoParam *par)
             return MFX_ERR_UNSUPPORTED;
     }
 
-
     if (m_vPar.IOPattern & MFX_IOPATTERN_OUT_OPAQUE_MEMORY)
     {
         mfxExtOpaqueSurfaceAlloc *pOpaqAlloc = (mfxExtOpaqueSurfaceAlloc *)GetExtendedBuffer(par->ExtParam, par->NumExtParam, MFX_EXTBUFF_OPAQUE_SURFACE_ALLOCATION);
@@ -443,10 +442,12 @@ mfxStatus VideoDECODEH264::Init(mfxVideoParam *par)
         umcVideoParams.pVideoAccelerator = m_va;
         static_cast<UMC::VATaskSupplier*>(m_pH264VideoDecoder.get())->SetVideoHardwareAccelerator(m_va);
 
+        mfxExtDecVideoProcessing* processingExtaData = (mfxExtDecVideoProcessing*)GetExtendedBuffer(par->ExtParam, par->NumExtParam,
+                MFX_EXTBUFF_DEC_VIDEO_PROCESSING_EXTA_DATA);
 
-        if (m_va->GetVideoProcessingVA())
+        if (m_va->GetVideoProcessingVA() && processingExtaData)
         {
-            if (m_va->GetVideoProcessingVA()->Init(par, videoProcessing) != UMC::UMC_OK)
+            if (m_va->GetVideoProcessingVA()->Init(par, processingExtaData) != UMC::UMC_OK)
                 return MFX_ERR_INVALID_VIDEO_PARAM;
         }
     }
@@ -1200,11 +1201,27 @@ mfxStatus VideoDECODEH264::DecodeFrameCheck(mfxBitstream *bs, mfxFrameSurface1 *
 
     if (m_va->GetVideoProcessingVA())
     {
-        mfxHDL surfHDL;
-        if(!m_isOpaq)
-            m_core->GetExternalFrameHDL(surface_work->Data.MemId, &surfHDL, false);
-        else
-            m_core->GetFrameHDL(surface_work->Data.MemId, &surfHDL, false);
+        mfxFrameSurface1 *surface = surface_work;
+        mfxHDL surfHDL = nullptr;
+
+        mfxExtBuffer **extParam = reinterpret_cast <mfxExtBuffer **> (surface_work->Data.ExtParam);
+        if (extParam)
+        {
+            mfxExtDecVideoProcessingExtaData *extaData = reinterpret_cast <mfxExtDecVideoProcessingExtaData*> (extParam[0]);
+            if (extaData)
+                surface = &extaData->surface;
+            else
+                surface = nullptr;
+        }
+
+        if (surface != nullptr)
+        {
+            if(!m_isOpaq)
+                m_core->GetExternalFrameHDL(surface->Data.MemId, &surfHDL, false);
+            else
+                m_core->GetFrameHDL(surface->Data.MemId, &surfHDL, false);
+        }
+
         m_va->GetVideoProcessingVA()->SetOutputSurface(surfHDL);
     }
 #endif
